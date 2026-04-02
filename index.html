@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyVocabApp - Fixed</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+    <style>
+        :root { 
+            --bg-body: #0f172a; --bg-surface: #1e293b; --primary: #38bdf8; 
+            --primary-hover: #0ea5e9; --secondary: #10b981; --text-main: #f8fafc;
+            --text-dim: #94a3b8; --correct: #10b981; --wrong: #f43f5e;
+            --card-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+            --glass: rgba(30, 41, 59, 0.7);
+        }
+        * { box-sizing: border-box; transition: all 0.2s ease; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: radial-gradient(circle at top left, #1e293b, #0f172a); color: var(--text-main); margin: 0; min-height: 100vh; }
+        .container { max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+        .page { display: none; }
+        .page.active { display: block; animation: fadeIn 0.4s ease; }
+        .glass-card { background: var(--glass); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 24px; padding: 30px; box-shadow: var(--card-shadow); }
+        input, textarea { width: 100%; padding: 15px; border-radius: 12px; border: 2px solid rgba(255, 255, 255, 0.05); background: rgba(15, 23, 42, 0.6); color: white; outline: none; margin-bottom: 10px; }
+        input:focus { border-color: var(--primary); }
+        .btn-base { padding: 12px 24px; border-radius: 12px; border: none; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-primary { background: var(--primary); color: #0f172a; }
+        .btn-outline { background: transparent; color: white; border: 1px solid rgba(255, 255, 255, 0.2); }
+        .folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 20px; }
+        .folder-item { cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.05); }
+        .folder-item:hover { border-color: var(--primary); transform: translateY(-5px); }
+        .manual-input-row { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: rgba(255,255,255,0.02); padding: 10px; border-radius: 12px; }
+        .btn-remove-row { background: rgba(244, 63, 94, 0.1); color: var(--wrong); width: 35px; height: 35px; border-radius: 8px; border: none; cursor: pointer; }
+        .tab-group { display: inline-flex; background: rgba(0, 0, 0, 0.2); padding: 5px; border-radius: 12px; margin-bottom: 20px; }
+        .tab-btn { padding: 8px 20px; border-radius: 8px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; }
+        .tab-btn.active { background: var(--bg-surface); color: var(--primary); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="page-home" class="page active">
+        <div class="glass-card" style="margin-bottom: 30px;">
+            <h2 style="color: var(--primary); margin-top:0;">TRA TỪ ĐIỂN</h2>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="search-input" placeholder="Nhập từ tiếng Anh..." onkeypress="if(event.key==='Enter') searchWord()">
+                <button class="btn-base btn-primary" onclick="searchWord()">TRA CỨU</button>
+            </div>
+            <div id="dict-result" style="margin-top:20px; display:none;"></div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>Thư viện của tôi</h2>
+            <button class="btn-base btn-primary" onclick="prepareAddPage()">+ TẠO NHÓM MỚI</button>
+        </div>
+        <div id="folder-list" class="folder-grid"></div>
+    </div>
+
+    <div id="page-add" class="page">
+        <div style="margin-bottom: 20px;">
+            <button class="btn-base btn-outline" onclick="switchPage('page-home')">← QUAY LẠI</button>
+        </div>
+        <div class="glass-card">
+            <h2 id="add-title">Thiết lập bộ từ</h2>
+            <input type="text" id="new-group-name" placeholder="Tên bộ từ (Ví dụ: Unit 1, IELTS...)">
+            
+            <div class="tab-group">
+                <button class="tab-btn active" id="t-bulk" onclick="toggleInput('bulk')">Nhập nhanh</button>
+                <button class="tab-btn" id="t-single" onclick="toggleInput('single')">Thủ công</button>
+            </div>
+
+            <div id="input-bulk">
+                <textarea id="bulk-text" placeholder="Từ : Nghĩa (Mỗi dòng 1 từ)" style="height: 150px;"></textarea>
+            </div>
+
+            <div id="input-single" style="display:none;">
+                <div id="single-rows-container"></div>
+                <button class="btn-base btn-outline" style="width:100%; border-style:dashed;" onclick="addInputRow()">+ THÊM DÒNG</button>
+            </div>
+
+            <button class="btn-base btn-primary" style="width:100%; margin-top:30px;" onclick="saveCollection()">LƯU BỘ TỪ</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- CẤU HÌNH FIREBASE ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyALi34WevE0G9d5FxlMDi13kVdQ7RxYJV8",
+        authDomain: "myvocabapp-650b2.firebaseapp.com",
+        databaseURL: "https://myvocabapp-650b2-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "myvocabapp-650b2",
+        storageBucket: "myvocabapp-650b2.firebasestorage.app",
+        messagingSenderId: "1064308414191",
+        appId: "1:1064308414191:web:3465e95f26ace452102d1a"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+    const vocabRef = database.ref('vocab_data');
+
+    let db = [];
+    let editIndex = null;
+
+    // --- LẮNG NGHE DỮ LIỆU THỜI GIAN THỰC ---
+    vocabRef.on('value', (snapshot) => {
+        const data = snapshot.val();
+        // Chuyển đổi dữ liệu từ Object sang Array nếu cần
+        db = data ? (Array.isArray(data) ? data : Object.values(data)) : [];
+        renderDashboard();
+    });
+
+    function switchPage(id) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+    }
+
+    function renderDashboard() {
+        const list = document.getElementById('folder-list');
+        list.innerHTML = '';
+
+        if (db.length === 0) {
+            list.innerHTML = `<p style="color:var(--text-dim); text-align:center; grid-column:1/-1;">Chưa có bộ từ nào. Hãy tạo mới!</p>`;
+            return;
+        }
+
+        db.forEach((group, index) => {
+            const card = document.createElement('div');
+            card.className = 'glass-card folder-item';
+            card.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div>
+                        <h3 style="margin:0;">${group.name}</h3>
+                        <p style="color:var(--primary); font-size:0.8rem; margin:5px 0;">${group.words.length} từ vựng</p>
+                    </div>
+                    <div style="display:flex; gap:5px;">
+                        <button onclick="event.stopPropagation(); editGroup(${index})" style="background:none; border:none; color:var(--primary); cursor:pointer;">✎</button>
+                        <button onclick="event.stopPropagation(); deleteGroup(${index})" style="background:none; border:none; color:var(--wrong); cursor:pointer;">🗑</button>
+                    </div>
+                </div>
+            `;
+            list.appendChild(card);
+        });
+    }
+
+    function prepareAddPage() {
+        editIndex = null;
+        document.getElementById('add-title').innerText = "Tạo bộ từ mới";
+        document.getElementById('new-group-name').value = '';
+        document.getElementById('bulk-text').value = '';
+        document.getElementById('single-rows-container').innerHTML = '';
+        addInputRow();
+        switchPage('page-add');
+    }
+
+    function addInputRow(w = '', m = '') {
+        const div = document.createElement('div');
+        div.className = 'manual-input-row';
+        div.innerHTML = `
+            <input type="text" class="w-val" value="${w}" placeholder="Từ">
+            <textarea class="m-val" placeholder="Nghĩa">${m}</textarea>
+            <button class="btn-remove-row" onclick="this.parentElement.remove()">✕</button>
+        `;
+        document.getElementById('single-rows-container').appendChild(div);
+    }
+
+    function toggleInput(m) {
+        document.getElementById('input-bulk').style.display = m === 'bulk' ? 'block' : 'none';
+        document.getElementById('input-single').style.display = m === 'single' ? 'block' : 'none';
+        document.getElementById('t-bulk').classList.toggle('active', m === 'bulk');
+        document.getElementById('t-single').classList.toggle('active', m === 'single');
+    }
+
+    function saveCollection() {
+        const name = document.getElementById('new-group-name').value.trim();
+        if (!name) return alert("Vui lòng nhập tên bộ từ!");
+
+        let rawWords = [];
+        // Lấy từ nhập nhanh
+        const bulk = document.getElementById('bulk-text').value.trim();
+        if (bulk) {
+            bulk.split('\n').forEach(line => {
+                if (line.includes(':')) {
+                    const parts = line.split(':');
+                    const w = parts[0].trim();
+                    const m = parts.slice(1).join(':').trim();
+                    if (w && m) rawWords.push({ w, m });
+                }
+            });
+        }
+
+        // Lấy từ nhập thủ công
+        document.querySelectorAll('.manual-input-row').forEach(row => {
+            const w = row.querySelector('.w-val').value.trim();
+            const m = row.querySelector('.m-val').value.trim();
+            if (w && m) rawWords.push({ w, m });
+        });
+
+        // Khử trùng lặp
+        const unique = new Map();
+        rawWords.forEach(item => unique.set(item.w.toLowerCase(), item));
+        const finalWords = Array.from(unique.values());
+
+        if (finalWords.length === 0) return alert("Vui lòng thêm ít nhất 1 từ!");
+
+        if (editIndex !== null) {
+            db[editIndex] = { name, words: finalWords };
+        } else {
+            db.push({ name, words: finalWords });
+        }
+
+        // Cập nhật Firebase
+        vocabRef.set(db).then(() => {
+            alert("Đã lưu thành công!");
+            switchPage('page-home');
+        });
+    }
+
+    function editGroup(index) {
+        editIndex = index;
+        const g = db[index];
+        document.getElementById('add-title').innerText = "Chỉnh sửa bộ từ";
+        document.getElementById('new-group-name').value = g.name;
+        document.getElementById('single-rows-container').innerHTML = '';
+        g.words.forEach(w => addInputRow(w.w, w.m));
+        toggleInput('single');
+        switchPage('page-add');
+    }
+
+    function deleteGroup(index) {
+        if (confirm("Bạn có chắc chắn muốn xóa vĩnh viễn bộ từ này?")) {
+            db.splice(index, 1);
+            vocabRef.set(db).then(() => {
+                console.log("Deleted successfully");
+            }).catch(err => alert("Lỗi: " + err.message));
+        }
+    }
+
+    async function searchWord() {
+        const val = document.getElementById('search-input').value.trim();
+        const res = document.getElementById('dict-result');
+        if(!val) return;
+        res.style.display = 'block';
+        res.innerHTML = 'Đang tìm...';
+        try {
+            const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${val}`);
+            const data = await response.json();
+            if (data.title) {
+                res.innerHTML = "Không tìm thấy từ này.";
+            } else {
+                const item = data[0];
+                res.innerHTML = `<b>${item.word}</b> (${item.meanings[0].partOfSpeech}): ${item.meanings[0].definitions[0].definition}`;
+            }
+        } catch (e) { res.innerHTML = "Lỗi kết nối từ điển."; }
+    }
+</script>
+</body>
+</html>
